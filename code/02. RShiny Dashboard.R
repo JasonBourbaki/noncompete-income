@@ -121,8 +121,8 @@ hist_occ_data <- acs_23_workers %>%
   mutate(share_quantile = occ_weight / sum(occ_weight), .by = c(state, quantile)) %>%
   mutate(percentile = quantile * 0.025) %>% select(-occ_weight)
 
-sum_demo <- function(data, column){
-  data %>% group_by(state) %>% count(.data[[column]]) %>%
+sum_demo <- function(data, column, weights){
+  data %>% group_by(state) %>% count(.data[[column]], wt = .data[[weights]]) %>%
     pivot_wider(names_from = .data[[column]], values_from = n) %>%
     mutate(sum=rowSums(across(where(is.numeric))), across(where(is.numeric), ~.x/sum)) %>% select(-sum)
 }
@@ -154,19 +154,19 @@ for(qtl in 1:40){
            education = case_when(EDUC %in% 0:6 ~ "High school or below",
                                  EDUC %in% 7:9 ~ "Some college",
                                  EDUC %in% 10:11 ~ "Bachelor's or above")) %>%
-    select(state, sex, age, race, education)
+    select(state, sex, age, race, education, PERWT)
   
-  demo_summary[[qtl]] <- sum_demo(demo_info, "sex") %>%
-    left_join(sum_demo(demo_info, "age"), by = "state") %>%
-    left_join(sum_demo(demo_info, "race"), by = "state") %>%
-    left_join(sum_demo(demo_info, "education"), by = "state") %>%
+  demo_summary[[qtl]] <- sum_demo(demo_info, "sex", "PERWT") %>%
+    left_join(sum_demo(demo_info, "age", "PERWT"), by = "state") %>%
+    left_join(sum_demo(demo_info, "race", "PERWT"), by = "state") %>%
+    left_join(sum_demo(demo_info, "education", "PERWT"), by = "state") %>%
     ungroup() %>% mutate(quantile = qtl)
 }
 occ_income_summary <- bind_rows(occ_income_summary)
 demo_summary <- bind_rows(demo_summary)
 
 ######################
-### Build Shiny UI ### d
+### Build Shiny UI ###
 ######################
 
 # Define EIG color palette
@@ -182,14 +182,14 @@ eig_palette <- function(n_colors, input_palette){
 }
 
 ui <- page_sidebar(
-  tags$style(type='text/css', "#description { font-size: 15px; }
+  tags$style(type='text/css', "#description { font-size: 13px; }
              .selectize-input { font-size: 75%; }
              .selectize-dropdown { font-size: 75%; }
              .income_percent { display: flex; justify-content: center; margin: auto; width: 80%; }
              .irs-from, .irs-to, .irs-min, .irs-max { visibility: hidden !important"),
   
   title = "State Occupation Breakdown by Income Threshold",
-  textOutput("description"),
+  verbatimTextOutput("description"),
   sidebar = sidebar(
     style = "font-size:75%;",
     
@@ -247,7 +247,7 @@ server <- function(input, output) {
     occ_income_summary %>% ungroup() %>%
       filter(state == input$state_selector,
              occ_category %in% input$occupation_selector,
-             quantile == as.integer(as.numeric(input$income_percent)*40)) %>%
+             quantile == as.integer(as.numeric(input$income_percent)*40) + 1) %>%
       select(occ_category, median_income, share_quantile) %>%
       mutate(share_quantile = percent(share_quantile, accuracy = 0.1)) %>%
       rename(Occupations = occ_category, "Median Income" = median_income,
@@ -256,7 +256,7 @@ server <- function(input, output) {
   
   selected_demo_data <- reactive({
     demo_summary %>% filter(state == input$state_selector,
-                            quantile == as.integer(as.numeric(input$income_percent)*40))
+                            quantile == as.integer(as.numeric(input$income_percent)*40) + 1)
   })
   selected_sex <- reactive({
     selected_demo_data() %>% select(M, `F`) %>%
@@ -286,12 +286,10 @@ server <- function(input, output) {
   })
   
   output$description <- renderText(
-    "This dashboard shows the occupational and demographic breakdown of each U.S. state above
-    a given income threshold. The first tab displays the distribution of selected occupations
-    across the income distribution; the second tab breaks down the median incomes of selected
-    occupations above the income threshold and each occupation's share of all workers above the
-    threshold; the third tab illustrates the sex, age, race, and education composition of all
-    workers above the income threshold."
+    "This dashboard tracks the occupational and demographic breakdown of each U.S. state above a given income threshold:
+    1. The first tab displays the distribution of selected occupations across the income distribution.
+    2. The second tab shows the median incomes and workforce share of selected occupations above the income threshold.
+    3. The third tab illustrates the sex, age, race, and education composition of all workers above the income threshold."
   )
   output$plot_dist <- renderPlot(
     ggplot(selected_occ_data(), aes(fill = Occupation, x = percentile, y = share_quantile)) +
