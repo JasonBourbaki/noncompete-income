@@ -1,0 +1,10 @@
+name: income_dashboard
+title:
+username: jbourbaki
+account: jbourbaki
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 14424176
+bundleId: 10052622
+url: https://jbourbaki.shinyapps.io/income_dashboard/
+version: 1

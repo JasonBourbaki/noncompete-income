@@ -1,10 +1,13 @@
 # Project: Analyzing the effect of income cutoffs in noncompete bans
 # File Description: R Shiny income breakdown dashboard
 
-# last update: 04/03/2025 by Jiaxin He
+# last update: 4/3/2025 by Jiaxin He
 
 # remove dependencies
 rm(list = ls())
+
+# restart R session, run if shinyapps.io deployment gives an error
+# .rs.restartR()
 
 ###########################
 ###   Load Packages     ###
@@ -15,43 +18,39 @@ library(dplyr)
 library(Hmisc)
 library(grattan)
 library(tidycensus)
-library(shiny)
 library(bslib)
 library(ggplot2)
 library(dichromat)
 library(cowplot)
 
+# R Shiny
+library(shiny)
+library(rsconnect)
+rsconnect::setAccountInfo(name='jbourbaki',
+                          token='D5ACB3BD6938CCA3233AB1EB8721D905',
+                          secret='B+heQVG1YWZOuxDtUGTcCmTOfP7Zn22q1t1z/OKZ')
+
 #################
-### Set paths ###
+### Load Data ###
 #################
-# Define user-specific project directories
-project_directories <- list(
-  "name" = "PATH TO GITHUB REPO",
-  "jiaxinhe" = "/Users/jiaxinhe/Documents/projects/noncompete-income"
-)
-
-# Setting project path based on current user
-current_user <- Sys.info()[["user"]]
-if (!current_user %in% names(project_directories)) {
-  stop("Root folder for current user is not defined.")
-}
-
-path_project <- project_directories[[current_user]]
-path_data <- file.path(path_project, "data")
-path_output <- file.path(path_project, "output")
-
-##################
-### Data build ###
-##################
-
-# Filter for private sector workers making non-zero wages
-acs_23 <- read.csv(file.path(path_data, "acs_5y_2023.csv"))
-
 # Query state fips-abbreviation crosswalk
 state_codes <- fips_codes %>% select(state_code, state) %>%
   distinct(state_code, .keep_all = TRUE) %>%
   mutate(state_code = as.numeric((state_code))) %>%
   filter(state_code <= 56)
+
+# Load in cleaned data
+# Change the path to "../data_cleaned" if running the app locally
+# DO NOT USE SETWD IN CODE IF DEPLOYING TO SHINYAPPS.IO
+hist_occ_data <- read.csv(file.path("data_cleaned", "hist_occ_data.csv")) %>% select(-X)
+occ_income_summary <- read.csv(file.path("data_cleaned", "occ_income_summary.csv")) %>% select(-X)
+demo_summary <- read.csv(file.path("data_cleaned", "demo_summary.csv")) %>% select(-X)
+
+# Fix the column names
+colnames(demo_summary) <- c("state", "F", "M", "16-24", "25-34", "35-44", "45-64", "65 and above",
+                            "African American", "Asian and Pacific Islander", "Multi-racial", 
+                            "Native American", "Other race", "White", "Bachelor's or above",
+                            "High school or below", "Some college", "quantile")
 
 # Ordered list of occupations
 occ_list <- c("Chief Executives",
@@ -79,92 +78,6 @@ occ_list <- c("Chief Executives",
               "Transportation and Material Moving",
               "Not Identified")
 
-# Filter for waged currently employed private sector workers
-acs_23_workers <- acs_23 %>% mutate(UNIQID = SAMPLE*(10^10) + SERIAL*(10^2) + PERNUM) %>%
-  distinct(UNIQID, .keep_all = TRUE) %>%
-  filter(EMPSTAT == 1, INCWAGE > 0, CLASSWKRD %in% c(20:23), STATEFIP <= 56) %>%
-  select(UNIQID, PERWT, STATEFIP, AGE, SEX, MARST, RACE, EDUC, INCTOT, INCWAGE,
-         WKSWORK2, UHRSWORK, IND1990, OCC2010) %>%
-  mutate(state = state_codes$state[match(.$STATEFIP, state_codes$state_code)],
-         occ_category = case_when(OCC2010 == 10 ~ "Chief Executives",
-                                  OCC2010 <= 20 & OCC2010 <= 430 ~ "Other Managers",
-                                  OCC2010 <= 500 & OCC2010 <= 730 ~ "Business Operations Specialists",
-                                  OCC2010 <= 800 & OCC2010 <= 950 ~ "Financial Specialists",
-                                  OCC2010 >= 1000 & OCC2010 <= 1240 ~ "Computer and Mathematical",
-                                  OCC2010 >= 1300 & OCC2010 <= 1540 ~ "Architecture and Engineering",
-                                  OCC2010 >= 1600 & OCC2010 <= 1980 ~ "Life, Physical, and Social Science",
-                                  OCC2010 <= 2000 & OCC2010 <= 2060 ~ "Community and Social Services",
-                                  OCC2010 <= 2100 & OCC2010 <= 2150 ~ "Legal",
-                                  OCC2010 <= 2200 & OCC2010 <= 2550 ~ "Education, Training, and Library",
-                                  OCC2010 <= 2600 & OCC2010 <= 2920 ~ "Arts, Design, Entertainment, Sports, and Media",
-                                  OCC2010 >= 3000 & OCC2010 <= 3540 ~ "Healthcare Practitioners and Technicians",
-                                  OCC2010 >= 3600 & OCC2010 <= 3650 ~ "Healthcare Support",
-                                  OCC2010 >= 3700 & OCC2010 <= 3950 ~ "Protective Service",
-                                  OCC2010 >= 4000 & OCC2010 <= 4150 ~ "Food Preparation and Serving",
-                                  OCC2010 >= 4200 & OCC2010 <= 4250 ~ "Building and Grounds Cleaning and Maintenance",
-                                  OCC2010 >= 4300 & OCC2010 <= 4650 ~ "Personal Care and Service",
-                                  OCC2010 >= 4700 & OCC2010 <= 4965 ~ "Sales and Related",
-                                  OCC2010 >= 5000 & OCC2010 <= 5940 ~ "Office and Administrative Support",
-                                  OCC2010 >= 6005 & OCC2010 <= 6130 ~ "Farming, Fishing, and Forestry",
-                                  OCC2010 >= 6200 & OCC2010 <= 6765 ~ "Construction",
-                                  OCC2010 >= 6800 & OCC2010 <= 6940 ~ "Extraction",
-                                  OCC2010 >= 7000 & OCC2010 <= 7630 ~ "Installation, Maintenance, and Repair",
-                                  OCC2010 >= 7700 & OCC2010 <= 8965 ~ "Production",
-                                  OCC2010 >= 9000 & OCC2010 <= 9750 ~ "Transportation and Material Moving",
-                                  TRUE ~ "Not Identified")) %>%
-  mutate(occ_category = factor(occ_category, ordered = TRUE, levels = occ_list)) %>%
-  group_by(state) %>% mutate(quantile = weighted_ntile(INCWAGE, PERWT, 40)) %>% ungroup()
-
-hist_occ_data <- acs_23_workers %>%
-  group_by(state, quantile, occ_category) %>%
-  summarise(occ_weight = sum(PERWT)) %>% ungroup() %>%
-  mutate(share_quantile = occ_weight / sum(occ_weight), .by = c(state, quantile)) %>%
-  mutate(percentile = quantile * 0.025) %>% select(-occ_weight)
-
-sum_demo <- function(data, column, weights){
-  data %>% group_by(state) %>% count(.data[[column]], wt = .data[[weights]]) %>%
-    pivot_wider(names_from = .data[[column]], values_from = n) %>%
-    mutate(sum=rowSums(across(where(is.numeric))), across(where(is.numeric), ~.x/sum)) %>% select(-sum)
-}
-
-occ_income_summary <- vector(mode = "list", length = 40)
-demo_summary <- vector(mode = "list", length = 40)
-for(qtl in 1:40){
-  occ_income_summary[[qtl]] <- acs_23_workers %>% filter(quantile >= qtl) %>%
-    group_by(state, occ_category) %>%
-    summarise(median_income = wtd.quantile(INCWAGE, PERWT, probs = c(0.5))[[1]],
-              occ_weight = sum(PERWT)) %>% ungroup() %>%
-    mutate(quantile = qtl) %>%
-    mutate(share_quantile = occ_weight / sum(occ_weight), .by = state) %>%
-    select(-occ_weight)
-  
-  demo_info <- acs_23_workers %>% filter(quantile >= qtl) %>%
-    mutate(sex = case_when(SEX == 1 ~ "M", SEX == 2 ~ "F", TRUE ~ "Missing"),
-           age = case_when(16 <= AGE & AGE <= 24 ~ "16-24",
-                           25 <= AGE & AGE <= 34 ~ "25-34",
-                           35 <= AGE & AGE <= 44 ~ "35-44",
-                           45 <= AGE & AGE <= 64 ~ "45-64",
-                           65 <= AGE ~ "65 and above"),
-           race = case_when(RACE == 1 ~ "White",
-                            RACE == 2 ~ "African American",
-                            RACE == 3 ~ "Native American",
-                            RACE %in% c(4,5,6) ~ "Asian and Pacific Islander",
-                            RACE == 7 ~ "Other race",
-                            RACE %in% c(8,9) ~ "Multi-racial"),
-           education = case_when(EDUC %in% 0:6 ~ "High school or below",
-                                 EDUC %in% 7:9 ~ "Some college",
-                                 EDUC %in% 10:11 ~ "Bachelor's or above")) %>%
-    select(state, sex, age, race, education, PERWT)
-  
-  demo_summary[[qtl]] <- sum_demo(demo_info, "sex", "PERWT") %>%
-    left_join(sum_demo(demo_info, "age", "PERWT"), by = "state") %>%
-    left_join(sum_demo(demo_info, "race", "PERWT"), by = "state") %>%
-    left_join(sum_demo(demo_info, "education", "PERWT"), by = "state") %>%
-    ungroup() %>% mutate(quantile = qtl)
-}
-occ_income_summary <- bind_rows(occ_income_summary)
-demo_summary <- bind_rows(demo_summary)
-
 ######################
 ### Build Shiny UI ###
 ######################
@@ -173,6 +86,8 @@ demo_summary <- bind_rows(demo_summary)
 eig_colors <- c("#b3d6dd", "#79c5fd", "#176F96", "#234f8b", 	# EIG blue colors
                 "#008080", "#5e9c86", "#1a654d", "#044140",	  # EIG green colors
                 "#feecd6", "#f0b799", "#da9969", "#e1ad28")		# EIG beige, red, and yellow
+
+# EIG palette selector
 eig_palette <- function(n_colors, input_palette){
   if(n_colors <= length(input_palette)){
     return(input_palette[floor(seq(from = 1, to = length(input_palette), length.out = n_colors))])
@@ -213,6 +128,7 @@ ui <- page_sidebar(
       multiple = TRUE
     ),
     
+    ### Income percentile selector ###
     sliderInput("income_percent", label = NULL, min = 0, max = 1, value = 0.95, step = 0.025),
     
     width = validateCssUnit(250)
@@ -235,6 +151,8 @@ ui <- page_sidebar(
 ##########################
 
 server <- function(input, output) {
+  # Filter by the state selected by the user and condense occupation categories
+  # to only those selected by the user
   selected_occ_data <- reactive({
     hist_occ_data %>% filter(state == input$state_selector) %>%
       mutate(Occupation = case_when(occ_category %in% input$occupation_selector ~ occ_category,
@@ -243,6 +161,7 @@ server <- function(input, output) {
                                  levels = c(input$occupation_selector, "Other Occupations")))
   })
   
+  # Filter by state, quantile, and occupations selected
   excluded_occ_income <- reactive({
     occ_income_summary %>% ungroup() %>%
       filter(state == input$state_selector,
@@ -336,5 +255,4 @@ server <- function(input, output) {
   })
 }
 
-shinyApp(ui, server)
-
+shinyApp(ui = ui, server = server)

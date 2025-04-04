@@ -1,7 +1,7 @@
 # Project: Analyzing the effect of income cutoffs in noncompete bans
 # File Description: 5 year New York and Ohio Labor Statistics
 
-# last update: 03/27/2025 by Jiaxin He
+# last update: 3/31/2025 by Jiaxin He
 
 # remove dependencies
 rm(list = ls())
