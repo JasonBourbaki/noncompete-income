@@ -26,10 +26,9 @@ library(cowplot)
 # R Shiny
 library(shiny)
 library(rsconnect)
-rsconnect::setAccountInfo(name='jbourbaki',
-                          token='D5ACB3BD6938CCA3233AB1EB8721D905',
-                          secret='B+heQVG1YWZOuxDtUGTcCmTOfP7Zn22q1t1z/OKZ')
-
+rsconnect::setAccountInfo(name='economicinnovationgroup',
+                          token='1E424A49864E72123BE5CAA19E6D2274',
+                          secret='/OJ/Oy/GW2sk6ibHJt4JgoqzB80U03mcEyFJn0ev')
 #################
 ### Load Data ###
 #################
