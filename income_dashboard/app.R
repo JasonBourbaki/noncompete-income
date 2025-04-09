@@ -46,10 +46,13 @@ occ_income_summary <- read.csv(file.path("data_cleaned", "occ_income_summary.csv
 demo_summary <- read.csv(file.path("data_cleaned", "demo_summary.csv")) %>% select(-X)
 
 # Fix the column names
-colnames(demo_summary) <- c("state", "F", "M", "16-24", "25-34", "35-44", "45-64", "65 and above",
+colnames(demo_summary) <- c("state", "income_cutoff", "F", "M", "16-24", "25-34", "35-44", "45-64", "65 and above",
                             "African American", "Asian and Pacific Islander", "Multi-racial", 
                             "Native American", "Other race", "White", "Bachelor's or above",
                             "High school or below", "Some college", "quantile")
+
+# Make median incomes integers
+occ_income_summary <- occ_income_summary %>% mutate(median_income = as.integer(median_income))
 
 # Ordered list of occupations
 occ_list <- c("Chief Executives",
@@ -168,14 +171,19 @@ server <- function(input, output) {
              quantile == as.integer(as.numeric(input$income_percent)*40) + 1) %>%
       select(occ_category, median_income, share_quantile) %>%
       mutate(share_quantile = percent(share_quantile, accuracy = 0.1)) %>%
-      rename(Occupations = occ_category, "Median Income" = median_income,
-             "Share of Workers" = share_quantile)
+      rename(Occupations = occ_category,
+             "Median Income above Income Threshold" = median_income,
+             "Share of Workers above Income Threshold" = share_quantile)
   })
   
   selected_demo_data <- reactive({
     demo_summary %>% filter(state == input$state_selector,
                             quantile == as.integer(as.numeric(input$income_percent)*40) + 1)
   })
+  selected_income_cutoff <- reactive({
+    demo_summary %>% filter(state == input$state_selector,
+                            quantile == as.integer(as.numeric(input$income_percent)*40)) %>%
+      .$income_cutoff})
   selected_sex <- reactive({
     selected_demo_data() %>% select(M, `F`) %>%
       pivot_longer(cols = everything(), names_to = "Sex", values_to = "Share") %>%
@@ -183,25 +191,27 @@ server <- function(input, output) {
         dummy = as.character(row_number()))
   })
   selected_age <- reactive({
-    selected_demo_data() %>% select(4:8) %>%
+    selected_demo_data() %>% select(5:9) %>%
       pivot_longer(cols = everything(), names_to = "Age", values_to = "Share") %>%
       mutate(Age = factor(Age, ordered = TRUE, levels = c("65 and above", "45-64", "35-44", "25-34", "16-24")),
              dummy = as.character(row_number()))
   })
   selected_race <- reactive({
-    selected_demo_data() %>% select(9:14) %>%
+    selected_demo_data() %>% select(10:15) %>%
       pivot_longer(cols = everything(), names_to = "Race", values_to = "Share") %>%
       mutate(Race = factor(Race, ordered = TRUE, levels = c("Native American", "Other race", "Multi-racial",
                                                             "Asian and Pacific Islander", "African American", "White")),
              dummy = as.character(row_number()))
   })
   selected_edu <- reactive({
-    selected_demo_data() %>% select(15:17) %>%
+    selected_demo_data() %>% select(16:18) %>%
       pivot_longer(cols = everything(), names_to = "Education", values_to = "Share") %>%
       mutate(Education = factor(Education, ordered = TRUE, levels = c("Bachelor's or above", "Some college",
                                                                       "High school or below")),
              dummy = as.character(row_number()))
   })
+  
+  income_cutoff <- reactive({})
   
   output$description <- renderText(
     "This dashboard tracks the occupational and demographic breakdown of each U.S. state above a given income threshold:
@@ -216,6 +226,9 @@ server <- function(input, output) {
       geom_vline(xintercept = as.numeric(input$income_percent), linetype="solid", size=0.8) +
       geom_text(aes(x = as.numeric(input$income_percent) - 0.02, y = 1.05,
                     label = paste0(as.character(as.numeric(input$income_percent) * 100), "%")),
+                stat = "unique", size = 3) +
+      geom_text(aes(x = as.numeric(input$income_percent) + 0.03, y = 1.05,
+                    label = paste0("$", label_comma(accuracy = 1)(selected_income_cutoff()))),
                 stat = "unique", size = 3) +
       geom_rect(xmin = 0, xmax = as.numeric(input$income_percent), ymin = 0, ymax = 1,
                 fill = "grey", alpha = 0.01) +

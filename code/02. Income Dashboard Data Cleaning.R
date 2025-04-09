@@ -158,7 +158,9 @@ for(qtl in 1:40){
                                  EDUC %in% 10:11 ~ "Bachelor's or above")) %>%
     select(state, sex, age, race, education, PERWT)
   
-  demo_summary[[qtl]] <- sum_demo(demo_info, "sex", "PERWT") %>%
+  demo_summary[[qtl]] <- acs_23_workers %>% group_by(state) %>%
+    summarise(income_cutoff = as.integer(wtd.quantile(INCWAGE, PERWT, probs = c(qtl*0.025)))) %>%
+    left_join(sum_demo(demo_info, "sex", "PERWT"), by = "state") %>%
     left_join(sum_demo(demo_info, "age", "PERWT"), by = "state") %>%
     left_join(sum_demo(demo_info, "race", "PERWT"), by = "state") %>%
     left_join(sum_demo(demo_info, "education", "PERWT"), by = "state") %>%
