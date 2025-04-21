@@ -5,6 +5,6 @@ account: economicinnovationgroup
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 14450315
-bundleId: 10085722
+bundleId: 10152523
 url: https://economicinnovationgroup.shinyapps.io/income_dashboard/
 version: 1

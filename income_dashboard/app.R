@@ -99,13 +99,61 @@ eig_palette <- function(n_colors, input_palette){
 }
 
 ui <- page_sidebar(
-  tags$style(type='text/css', "#description { font-size: 13px; }
-             .selectize-input { font-size: 75%; }
-             .selectize-dropdown { font-size: 75%; }
-             .income_percent { display: flex; justify-content: center; margin: auto; width: 80%; }
-             .irs-from, .irs-to, .irs-min, .irs-max { visibility: hidden !important"),
+  tags$head(
+  tags$link(
+      href = "https://fonts.googleapis.com/css2?family=Source+Serif+Pro:wght@400;700&display=swap",
+      rel = "stylesheet"
+    ),
+  tags$style(HTML("
+      h1 {
+        font-family: 'Source Serif Pro', serif;
+        font-weight: bold;
+        margin: 0;
+        font-size: 2em;
+      }
+      .header-container {
+        display: flex;
+        align-items: center;
+        background-color: #044140;
+        padding: 20px;
+        color: white;
+        justify-content: center;
+      }
+      .header-logo {
+        height: 60px;
+        margin-right: 20px;
+      }
+      .card-header-tabs>li>a{
+        color: #1a654d;
+      }
+      .card-header-tabs>li>a:hover{
+        color: #5e9c86;
+      }
+      .nav-tabs>li>a{
+        color: #1a654d;
+      }
+      .nav-tabs>li>a:hover{
+        color: #5e9c86;
+      }
+      #description { font-size: 13px; }
+      .selectize-input { font-size: 75%; }
+      .selectize-dropdown { font-size: 75%; }
+      .income_percent { display: flex; justify-content: center; margin: auto; width: 80%; }
+      .irs-from, .irs-to, .irs-min, .irs-max { visibility: hidden !important;}
+    "))
+  ),
   
-  title = "State Occupation Breakdown by Income Threshold",
+  ## Title ##
+  div(
+    class = "header-container",
+    
+    # Logo to left of the title
+    img(src = "EIG_reverse.png", alt = "EIG Logo", class = "header-logo"),
+    
+    # Title with bold font
+    h1("State Workforce Profile by Income Threshold")
+  ),
+
   verbatimTextOutput("description"),
   sidebar = sidebar(
     style = "font-size:75%;",
@@ -141,10 +189,10 @@ ui <- page_sidebar(
     nav_panel("Income Distribution", plotOutput("plot_dist")),
     
     ### Median Incomes per Category above Wage Cap ###
-    nav_panel("Median Incomes", tableOutput("tbl_inc")),
+    nav_panel("Occupation Breakdown above Threshold", tableOutput("tbl_inc")),
     
     ### Demographic Characteristics of Those above Wage Cap ###
-    nav_panel("Demographics", plotOutput("plots_dem"))
+    nav_panel("Demographic Breakdown above Threshold", plotOutput("plots_dem"))
   )
 )
 
