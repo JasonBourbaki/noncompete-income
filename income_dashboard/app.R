@@ -109,7 +109,7 @@ ui <- page_sidebar(
         font-family: 'Source Serif Pro', serif;
         font-weight: bold;
         margin: 0;
-        font-size: 2em;
+        font-size: 2.5em;
       }
       .header-container {
         display: flex;
@@ -140,6 +140,8 @@ ui <- page_sidebar(
       .selectize-dropdown { font-size: 75%; }
       .income_percent { display: flex; justify-content: center; margin: auto; width: 80%; }
       .irs-from, .irs-to, .irs-min, .irs-max { visibility: hidden !important;}
+      .js-irs-0 .irs-bar, .js-irs-0 .irs-single, .js-irs-0 .irs-handle { background: #1a654d; border-color: #1a654d; }
+      .js-irs-0 .irs-handle:hover { background: #5e9c86; border-color: #5e9c86; }
     "))
   ),
   
@@ -151,20 +153,26 @@ ui <- page_sidebar(
     img(src = "EIG_reverse.png", alt = "EIG Logo", class = "header-logo"),
     
     # Title with bold font
-    h1("State Workforce Profile by Income Threshold")
+    h1("State Workforce Occupation and Income Profiles")
   ),
 
-  verbatimTextOutput("description"),
   sidebar = sidebar(
-    style = "font-size:75%;",
+    style = "font-size:90%;",
     
     ### U.S. State Selector ###
     selectizeInput( 
       "state_selector", 
-      "Select state to view", 
+      "Choose a state to view", 
       choices = state_codes$state,
       selected = "NY"
     ),
+    
+    ### Income percentile selector ###
+    sliderInput("income_percent", label = "Set income percentile (%)",
+                min = 0,
+                max = 100,
+                value = 95,
+                step = 2.5),
     
     ### Occupation Category Selector ###
     selectizeInput(
@@ -178,21 +186,57 @@ ui <- page_sidebar(
       multiple = TRUE
     ),
     
-    ### Income percentile selector ###
-    sliderInput("income_percent", label = NULL, min = 0, max = 1, value = 0.95, step = 0.025),
-    
     width = validateCssUnit(250)
   ),
   
   navset_card_tab(
     ### Plot with Income Percentile Slider ###
-    nav_panel("Income Distribution", plotOutput("plot_dist")),
+    nav_panel("Occupational Composition by Income",
+              fluidRow(
+                column(12, div(style = "text-align: left; font-size: 16px; color: #555;",
+                               textOutput("text_dist"))
+                )),
+              fluidRow(
+                column(12, div(style = "text-align: left; height: 100%; font-size: 12px; color: #555;",
+                               plotOutput("plot_dist"))
+                       )),
+              fluidRow(
+                column(12, div(style = "text-align: left; font-size: 14px; color: #555;",
+                         HTML('Source: <a href="https://usa.ipums.org/usa/" target="_blank">2023 5-year American Community Survey,</a> U.S. Census Bureau, retrieved from IPUMS USA.'))
+                       ))
+    ),
     
     ### Median Incomes per Category above Wage Cap ###
-    nav_panel("Occupation Breakdown above Threshold", tableOutput("tbl_inc")),
+    nav_panel("Occupations Breakdown above Income Threshold",
+              fluidRow(
+                column(12, div(style = "text-align: left; font-size: 16px; color: #555;",
+                               textOutput("text_inc"))
+                )),
+              fluidRow(
+                column(12, div(style = "text-align: center; font-size: 16px; color: #555;",
+                               tableOutput("tbl_inc"))
+                )),
+              fluidRow(
+                column(12, div(style = "text-align: left; font-size: 14px; color: #555;",
+                               HTML('Source: <a href="https://usa.ipums.org/usa/" target="_blank">2023 5-year American Community Survey,</a> U.S. Census Bureau, retrieved from IPUMS USA.'))
+                ))
+    ),
     
     ### Demographic Characteristics of Those above Wage Cap ###
-    nav_panel("Demographic Breakdown above Threshold", plotOutput("plots_dem"))
+    nav_panel("Demographic Breakdown above Income Threshold",
+              fluidRow(
+                column(12, div(style = "text-align: left; font-size: 16px; color: #555;",
+                               textOutput("text_dem"))
+                )),
+              fluidRow(
+                column(12, div(style = "text-align: left; font-size: 16px; color: #555;",
+                               plotOutput("plots_dem"))
+                )),
+              fluidRow(
+                column(12, div(style = "text-align: left; font-size: 14px; color: #555;",
+                               HTML('Source: <a href="https://usa.ipums.org/usa/" target="_blank">2023 5-year American Community Survey,</a> U.S. Census Bureau, retrieved from IPUMS USA.'))
+                ))
+    ),
   )
 )
 
@@ -216,9 +260,10 @@ server <- function(input, output) {
     occ_income_summary %>% ungroup() %>%
       filter(state == input$state_selector,
              occ_category %in% input$occupation_selector,
-             quantile == as.integer(as.numeric(input$income_percent)*40) + 1) %>%
+             quantile == as.integer(as.numeric(input$income_percent)*40/100) + 1) %>%
       select(occ_category, median_income, share_quantile) %>%
-      mutate(share_quantile = percent(share_quantile, accuracy = 0.1)) %>%
+      mutate(median_income = paste0("$", scales::label_comma(accuracy = 1)(median_income)),
+             share_quantile = percent(share_quantile, accuracy = 0.1)) %>%
       rename(Occupations = occ_category,
              "Median Income above Income Threshold" = median_income,
              "Share of Workers above Income Threshold" = share_quantile)
@@ -226,11 +271,11 @@ server <- function(input, output) {
   
   selected_demo_data <- reactive({
     demo_summary %>% filter(state == input$state_selector,
-                            quantile == as.integer(as.numeric(input$income_percent)*40) + 1)
+                            quantile == as.integer(as.numeric(input$income_percent)*40/100) + 1)
   })
   selected_income_cutoff <- reactive({
     demo_summary %>% filter(state == input$state_selector,
-                            quantile == as.integer(as.numeric(input$income_percent)*40)) %>%
+                            quantile == as.integer(as.numeric(input$income_percent)*40/100)) %>%
       .$income_cutoff})
   selected_sex <- reactive({
     selected_demo_data() %>% select(M, `F`) %>%
@@ -259,59 +304,72 @@ server <- function(input, output) {
              dummy = as.character(row_number()))
   })
   
-  income_cutoff <- reactive({})
-  
-  output$description <- renderText(
-    "This dashboard tracks the occupational and demographic breakdown of each U.S. state above a given income threshold:
-    1. The first tab displays the distribution of selected occupations across the income distribution.
-    2. The second tab shows the median incomes and workforce share of selected occupations above the income threshold.
-    3. The third tab illustrates the sex, age, race, and education composition of all workers above the income threshold."
-  )
+  output$text_dist <- renderText("The figure below illustrates the state occupational composition of workers who would still be subject to noncompetes based on the user’s chosen income threshold.")
   output$plot_dist <- renderPlot(
     ggplot(selected_occ_data(), aes(fill = Occupation, x = percentile, y = share_quantile)) +
       geom_bar(position = "fill", stat = "identity", just = 1) +
       
-      geom_vline(xintercept = as.numeric(input$income_percent), linetype="solid", size=0.8) +
-      geom_text(aes(x = as.numeric(input$income_percent) - 0.02, y = 1.05,
-                    label = paste0(as.character(as.numeric(input$income_percent) * 100), "%")),
-                stat = "unique", size = 3) +
-      geom_text(aes(x = as.numeric(input$income_percent) + 0.03, y = 1.05,
+      geom_vline(xintercept = as.numeric(input$income_percent)/100, linetype="solid", size=0.8) +
+      geom_text(aes(x = as.numeric(input$income_percent)/100 + 0.05, y = 1.05,
                     label = paste0("$", label_comma(accuracy = 1)(selected_income_cutoff()))),
-                stat = "unique", size = 3) +
-      geom_rect(xmin = 0, xmax = as.numeric(input$income_percent), ymin = 0, ymax = 1,
+                stat = "unique", size = 4) +
+      geom_rect(xmin = 0, xmax = as.numeric(input$income_percent)/100, ymin = 0, ymax = 1,
                 fill = "grey", alpha = 0.01) +
       
-      ylab("Share of Workers in the Income Bin") +
-      xlab("Weighted Income Percentile") + theme_bw() +
-      scale_fill_manual(values = eig_palette((length(input$occupation_selector) + 1), eig_colors))
+      ylab("Share of Workers Given Income Level") +
+      xlab("Income Percentile") + theme_bw(base_size = 14) +
+      scale_x_continuous(breaks = seq(0, 1, 0.1), labels = scales::percent) +
+      scale_y_continuous(breaks = seq(0, 1, 0.1), labels = scales::percent) +
+      scale_fill_manual(values = eig_palette((length(input$occupation_selector) + 1), eig_colors)) +
+      theme(
+        legend.text = element_text(size = 13),
+        legend.title = element_text(size = 16),
+        axis.text = element_text(size = 12),
+        panel.grid.major.x = element_blank(),
+        panel.grid.minor = element_blank()
+      )
   )
   
+  output$text_inc <- renderText("The table below shows the median incomes of workers from each occupation who would still be subject to noncompetes based on the user’s chosen income threshold. It also provides the percentage that each occupation represents of the total workers still subject.")
   output$tbl_inc <- renderTable(
     excluded_occ_income()
   )
   
+  output$text_dem <- renderText("The figures below illustrate the demographic characteristics of workers still subject to noncompetes based on the user’s chosen income threshold. ")
   output$plots_dem <- renderPlot({
     plot_sex <- ggplot(selected_sex(), aes(x = Share, y = Sex, fill = dummy)) +
-      geom_bar(stat = "identity") + geom_text(aes(label = percent(Share, accuracy = 0.1)), hjust = -0.02) +
-      theme_bw() + scale_fill_manual(values = eig_palette(nrow(selected_sex()), eig_colors)) +
-      theme(legend.position = "none") + xlim(0,1)
+      geom_bar(stat = "identity") + geom_text(aes(label = percent(Share, accuracy = 0.1)), hjust = -0.02, size = 4.5) +
+      theme_bw(base_size = 14) + scale_fill_manual(values = eig_palette(nrow(selected_sex()), eig_colors)) +
+      scale_x_continuous(labels = scales::percent, lim= c(0,1)) +
+      theme(legend.position = "none",
+            axis.text = element_text(size = 12),
+            panel.grid.major.y = element_blank())
     
     plot_age <- ggplot(selected_age(), aes(x = Share, y = Age, fill = dummy)) +
-      geom_bar(stat = "identity") + geom_text(aes(label = percent(Share, accuracy = 0.1)), hjust = -0.02) +
-      theme_bw() + scale_fill_manual(values = eig_palette(nrow(selected_age()), eig_colors)) +
-      theme(legend.position = "none") + xlim(0,1)
+      geom_bar(stat = "identity") + geom_text(aes(label = percent(Share, accuracy = 0.1)), hjust = -0.02, size = 4.5) +
+      theme_bw(base_size = 14) + scale_fill_manual(values = eig_palette(nrow(selected_age()), eig_colors)) +
+      scale_x_continuous(labels = scales::percent, lim= c(0,1)) +
+      theme(legend.position = "none",
+            axis.text = element_text(size = 12),
+            panel.grid.major.y = element_blank())
     
     plot_race <- ggplot(selected_race(), aes(x = Share, y = Race, fill = dummy)) +
-      geom_bar(stat = "identity") + geom_text(aes(label = percent(Share, accuracy = 0.1)), hjust = -0.02) +
-      theme_bw() + scale_fill_manual(values = eig_palette(nrow(selected_race()), eig_colors)) +
-      theme(legend.position = "none") + xlim(0,1)
+      geom_bar(stat = "identity") + geom_text(aes(label = percent(Share, accuracy = 0.1)), hjust = -0.02, size = 4.5) +
+      theme_bw(base_size = 14) + scale_fill_manual(values = eig_palette(nrow(selected_race()), eig_colors)) +
+      scale_x_continuous(labels = scales::percent, lim= c(0,1)) +
+      theme(legend.position = "none",
+            axis.text = element_text(size = 12),
+            panel.grid.major.y = element_blank())
     
     plot_edu <- ggplot(selected_edu(), aes(x = Share, y = Education, fill = dummy)) +
-      geom_bar(stat = "identity") + geom_text(aes(label = percent(Share, accuracy = 0.1)), hjust = -0.02) +
-      theme_bw() + scale_fill_manual(values = eig_palette(nrow(selected_edu()), eig_colors)) +
-      theme(legend.position = "none") + xlim(0,1)
+      geom_bar(stat = "identity") + geom_text(aes(label = percent(Share, accuracy = 0.1)), hjust = -0.02, size = 4.5) +
+      theme_bw(base_size = 14) + scale_fill_manual(values = eig_palette(nrow(selected_edu()), eig_colors)) +
+      scale_x_continuous(labels = scales::percent, lim= c(0,1)) +
+      theme(legend.position = "none",
+            axis.text = element_text(size = 12),
+            panel.grid.major.y = element_blank())
     
-    plot_grid(plot_sex, plot_age, plot_race, plot_edu, ncol = 1, align = "v", axis = "lr")
+    plot_grid(plot_sex, plot_age, plot_race, plot_edu, ncol = 2, align = "v", axis = "lr")
   })
 }
 
