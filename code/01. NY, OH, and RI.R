@@ -9,6 +9,7 @@ rm(list = ls())
 ###########################
 ###   Load Packages     ###
 ###########################
+library(readxl)
 library(scales)
 library(tidyr)
 library(dplyr)
@@ -49,13 +50,67 @@ state_codes <- fips_codes %>% select(state_code, state) %>%
   mutate(state_code = as.numeric((state_code))) %>%
   filter(state_code <= 56)
 
+# Ordered list of occupations
+occ_list <- c("Chief Executives",
+              "Other Managers",
+              "Business Operations Specialists",
+              "Financial Specialists",
+              "Computer and Mathematical",
+              "Architecture and Engineering",
+              "Life, Physical, and Social Science", 
+              "Community and Social Services",
+              "Legal", "Education, Training, and Library",
+              "Arts, Design, Entertainment, Sports, and Media",
+              "Healthcare Practitioners and Technicians",
+              "Healthcare Support", "Protective Service",
+              "Food Preparation and Serving",
+              "Building and Grounds Cleaning and Maintenance",
+              "Personal Care and Service",
+              "Sales and Related",
+              "Office and Administrative Support",
+              "Farming, Fishing, and Forestry",
+              "Construction",
+              "Extraction",
+              "Installation, Maintenance, and Repair",
+              "Production",
+              "Transportation and Material Moving",
+              "Not Identified")
+
 # Filter for waged currently employed private sector workers
-acs_23_workers <- acs_23 %>% mutate(UNIQID = SAMPLE*(10^10) + SERIAL*(10^2) + PERNUM) %>%
-  distinct(UNIQID, .keep_all = TRUE) %>%
-  filter(EMPSTAT == 1, INCWAGE > 0, CLASSWKRD %in% c(20:23), STATEFIP <= 56) %>%
-  select(UNIQID, PERWT, STATEFIP, AGE, SEX, MARST, RACE, EDUC, INCTOT, INCWAGE,
-         WKSWORK2, UHRSWORK, IND1990, OCC2010) %>%
-  mutate(state = state_codes$state[match(.$STATEFIP, state_codes$state_code)])
+acs_23_workers <- acs_23 %>% mutate(UNIQID = SAMPLE*(10^10) + SERIAL*(10^2) + PERNUM)  %>%
+  distinct(UNIQID, .keep_all = TRUE) %>% # the combination of SAMPLE, SERIAL, and PERNUM uniquely identifies every person in the database.
+  filter(EMPSTAT == 1, INCWAGE > 0, # Employed and has non-zero wage income
+         CLASSWKRD %in% c(20:23),   # Works for wages/salary, non-government
+         STATEFIP <= 56) %>%        # Select 50 states and DC
+  select(UNIQID, PERWT, STATEFIP, AGE, SEX, MARST, RACE, EDUC, INCTOT, INCWAGE, IND1990, OCC2010) %>%
+  mutate(state = state_codes$state[match(.$STATEFIP, state_codes$state_code)],
+         occ_category = case_when(OCC2010 == 10 ~ "Chief Executives",
+                                  OCC2010 <= 20 & OCC2010 <= 430 ~ "Other Managers",
+                                  OCC2010 <= 500 & OCC2010 <= 730 ~ "Business Operations Specialists",
+                                  OCC2010 <= 800 & OCC2010 <= 950 ~ "Financial Specialists",
+                                  OCC2010 >= 1000 & OCC2010 <= 1240 ~ "Computer and Mathematical",
+                                  OCC2010 >= 1300 & OCC2010 <= 1540 ~ "Architecture and Engineering",
+                                  OCC2010 >= 1600 & OCC2010 <= 1980 ~ "Life, Physical, and Social Science",
+                                  OCC2010 <= 2000 & OCC2010 <= 2060 ~ "Community and Social Services",
+                                  OCC2010 <= 2100 & OCC2010 <= 2150 ~ "Legal",
+                                  OCC2010 <= 2200 & OCC2010 <= 2550 ~ "Education, Training, and Library",
+                                  OCC2010 <= 2600 & OCC2010 <= 2920 ~ "Arts, Design, Entertainment, Sports, and Media",
+                                  OCC2010 >= 3000 & OCC2010 <= 3540 ~ "Healthcare Practitioners and Technicians",
+                                  OCC2010 >= 3600 & OCC2010 <= 3650 ~ "Healthcare Support",
+                                  OCC2010 >= 3700 & OCC2010 <= 3950 ~ "Protective Service",
+                                  OCC2010 >= 4000 & OCC2010 <= 4150 ~ "Food Preparation and Serving",
+                                  OCC2010 >= 4200 & OCC2010 <= 4250 ~ "Building and Grounds Cleaning and Maintenance",
+                                  OCC2010 >= 4300 & OCC2010 <= 4650 ~ "Personal Care and Service",
+                                  OCC2010 >= 4700 & OCC2010 <= 4965 ~ "Sales and Related",
+                                  OCC2010 >= 5000 & OCC2010 <= 5940 ~ "Office and Administrative Support",
+                                  OCC2010 >= 6005 & OCC2010 <= 6130 ~ "Farming, Fishing, and Forestry",
+                                  OCC2010 >= 6200 & OCC2010 <= 6765 ~ "Construction",
+                                  OCC2010 >= 6800 & OCC2010 <= 6940 ~ "Extraction",
+                                  OCC2010 >= 7000 & OCC2010 <= 7630 ~ "Installation, Maintenance, and Repair",
+                                  OCC2010 >= 7700 & OCC2010 <= 8965 ~ "Production",
+                                  OCC2010 >= 9000 & OCC2010 <= 9750 ~ "Transportation and Material Moving",
+                                  TRUE ~ "Not Identified")) %>%
+  mutate(occ_category = factor(occ_category, ordered = TRUE, levels = occ_list))
 
 # Generate income cutoffs for each state
 percentile_bins <- c(0.8, 0.9, 0.95)
@@ -174,3 +229,38 @@ ny_income_percents <- acs_23_workers %>% filter(state == "NY") %>% left_join(inc
 setwd(path_output)
 write.csv(ny_income_percents, "New York Occupation Breakdown by Income Percentile.csv")
 ggsave("New York Occupation Breakdown by Income Percentile.jpg", ny_hist_occ)
+
+# Generate analysis for Rhode Island S0302
+ri_income_percents <- acs_23_workers %>% filter(state == "RI") %>%
+  mutate(above_threshold = as.numeric(INCTOT > 125000))
+
+# Around 9.5% of Rhode Island's total workforce will be excluded
+ri_tot_share <- sum(ri_income_percents %>% filter(above_threshold == 1) %>% .$PERWT) / sum(ri_income_percents$PERWT)
+
+# Around 17.5% of Rhode Island's healthcare practitioners and technicians will be excluded
+ri_health_share <- sum(ri_income_percents %>% filter(above_threshold == 1, occ_category == "Healthcare Practitioners and Technicians") %>% .$PERWT) /
+  sum(ri_income_percents %>% filter(occ_category == "Healthcare Practitioners and Technicians") %>% .$PERWT)
+
+# Around 20.4% of Rhode Island's STEM workforce will be excluded
+ri_stem_share <- sum(ri_income_percents %>% filter(above_threshold == 1, occ_category %in% c("Computer and Mathematical",
+                                                                            "Architecture and Engineering",
+                                                                            "Life, Physical, and Social Science")) %>% .$PERWT) /
+  sum(ri_income_percents %>% filter(occ_category %in% c("Computer and Mathematical",
+                                                        "Architecture and Engineering",
+                                                        "Life, Physical, and Social Science")) %>% .$PERWT)
+
+# Read in 2023 RI OEWS employment numbers
+ri_oews_emp <- read_xlsx(file.path(path_data, "state_M2023_dl.xlsx"), sheet = "state_M2023_dl") %>%
+  filter(PRIM_STATE == "RI", substr(OCC_CODE, 4, 7) == "0000")
+ri_noncompetes_summary <- ri_oews_emp %>% select(OCC_CODE, OCC_TITLE, TOT_EMP) %>%
+  filter(substr(OCC_CODE, 1, 2) %in% c("00", "15", "17", "19", "29")) %>%
+  mutate(`Total Employment` = as.numeric(TOT_EMP),
+         Category = case_when(
+           OCC_CODE == "00-0000" ~ "All Workers",
+           OCC_CODE %in% c("15-0000", "17-0000", "19-0000") ~ "STEM Workers",
+           OCC_CODE == "29-0000" ~ "Healthcare Practitioners and Technicians")) %>%
+  group_by(Category) %>% summarise(`Total Employment` = sum(`Total Employment`)) %>% ungroup() %>%
+  mutate(`Share Earning above $125,000` = c(ri_tot_share, ri_health_share, ri_stem_share),
+         `Expected Number of Excluded Workers` = round(`Total Employment`*`Share Earning above $125,000`, 0))
+
+write.csv(ri_noncompetes_summary, file.path(path_output, "RI S0302 Workers Earning above Income Threshold.csv"))
